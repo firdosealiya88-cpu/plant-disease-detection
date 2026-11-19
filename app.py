@@ -11,8 +11,8 @@ import tensorflow as tf
 from PIL import Image, ImageOps
 
 ROOT = Path(__file__).resolve().parent
-MODEL_PATH = ROOT / "models" / "color_cnn_v2.keras"
-CLASS_PATH = ROOT / "outputs" / "cnn" / "class_names_v2.json"
+MODEL_PATH = ROOT / "models" / "mobilenetv2_plantcare.keras"
+CLASS_PATH = ROOT / "outputs" / "mobilenet" / "class_names_mobilenet.json"
 DATA_DIR = ROOT / "data"
 HISTORY_PATH = DATA_DIR / "scan_history.csv"
 
@@ -50,7 +50,7 @@ LANG = {
         "home": "Home", "detect": "Disease Detection",
         "history": "Detection History", "analytics": "Analytics Dashboard",
         "library": "Disease Library", "doctor": "Plant Doctor",
-        "risk": "Environmental Risk", "map": "Plant Health Map",
+        "risk": "Environmental Risk", "map": "Crop Disease Risk Map",
         "about": "About Project", "upload": "Upload plant leaf images",
         "predict": "Analyze image", "healthy": "Healthy",
         "diseased": "Possible disease detected"
@@ -59,7 +59,7 @@ LANG = {
         "home": "होम", "detect": "रोग पहचान",
         "history": "पहचान इतिहास", "analytics": "विश्लेषण डैशबोर्ड",
         "library": "रोग पुस्तकालय", "doctor": "प्लांट डॉक्टर",
-        "risk": "पर्यावरणीय जोखिम", "map": "पौधों का स्वास्थ्य मानचित्र",
+        "risk": "पर्यावरणीय जोखिम", "map": "फसल रोग जोखिम मानचित्र",
         "about": "परियोजना के बारे में", "upload": "पत्तियों की तस्वीरें अपलोड करें",
         "predict": "तस्वीर का विश्लेषण करें", "healthy": "स्वस्थ",
         "diseased": "संभावित रोग का पता चला"
@@ -68,7 +68,7 @@ LANG = {
         "home": "ಮುಖಪುಟ", "detect": "ರೋಗ ಪತ್ತೆ",
         "history": "ಪತ್ತೆ ಇತಿಹಾಸ", "analytics": "ವಿಶ್ಲೇಷಣೆ ಡ್ಯಾಶ್‌ಬೋರ್ಡ್",
         "library": "ರೋಗ ಗ್ರಂಥಾಲಯ", "doctor": "ಪ್ಲಾಂಟ್ ಡಾಕ್ಟರ್",
-        "risk": "ಪರಿಸರ ಅಪಾಯ", "map": "ಸಸ್ಯ ಆರೋಗ್ಯ ನಕ್ಷೆ",
+        "risk": "ಪರಿಸರ ಅಪಾಯ", "map": "ಬೆಳೆ ರೋಗ ಅಪಾಯ ನಕ್ಷೆ",
         "about": "ಯೋಜನೆಯ ಬಗ್ಗೆ", "upload": "ಎಲೆಗಳ ಚಿತ್ರಗಳನ್ನು ಅಪ್‌ಲೋಡ್ ಮಾಡಿ",
         "predict": "ಚಿತ್ರವನ್ನು ವಿಶ್ಲೇಷಿಸಿ", "healthy": "ಆರೋಗ್ಯಕರ",
         "diseased": "ಸಂಭಾವ್ಯ ರೋಗ ಪತ್ತೆಯಾಗಿದೆ"
@@ -108,7 +108,8 @@ def save_history(record):
 def prepare_image(image):
     image = ImageOps.exif_transpose(image).convert("RGB")
     resized = image.resize((128, 128))
-    array = np.asarray(resized, dtype=np.float32) / 255.0
+    # MobileNetV2 preprocessing is included inside the trained model.
+    array = np.asarray(resized, dtype=np.float32)
     return image, np.expand_dims(array, axis=0)
 
 def quality_check(image):
@@ -200,6 +201,7 @@ def create_pdf(result):
         f"Condition predicted: {result.get('disease', '')}",
         f"Model score: {result.get('score', 0):.2f}%",
         f"Severity estimate entered by user: {result.get('severity', 'Not entered')}",
+        f"User-estimated health score: {result.get('health_score', 'Not calculated')}",
         "",
         "Suggested precautions:"
     ]
@@ -262,8 +264,19 @@ T = LANG[language]
 
 mode = st.sidebar.radio("User mode", ["Farmer Mode", "Expert Mode"])
 page_options = [
-    T["home"], T["detect"], T["history"], T["analytics"],
-    T["library"], T["doctor"], T["risk"], T["map"], T["about"]
+    T["home"],
+    T["detect"],
+    T["history"],
+    T["analytics"],
+    T["library"],
+    T["doctor"],
+    T["risk"],
+    T["map"],
+    "Plant Progress Tracker",
+    "7-Day Crop Care Planner",
+    "Agriculture Chat Assistant",
+    "Crop Intelligence Dashboard",
+    T["about"]
 ]
 page = st.sidebar.radio("Navigation", page_options)
 
@@ -315,7 +328,7 @@ if page == T["home"]:
 
     e, f = st.columns(2)
     e.metric("Average model output score", f"{avg_score:.1f}%")
-    f.metric("CNN supported classes", 38)
+    f.metric("MobileNetV2 supported classes", 38)
 
     st.caption(
         "Dashboard statistics are calculated from your saved scans. "
@@ -520,341 +533,489 @@ if page == T["home"]:
         }
         return descriptions.get(code, "Weather information unavailable")
 
-
-    st.divider()
-    st.subheader("Live Weather Monitoring")
-    st.caption("Weather information fetched from Open-Meteo. Enter your farm or city location.")
-
-    weather_col, refresh_col = st.columns([3, 1])
-    with weather_col:
-        weather_city = st.text_input(
-            "Enter city or location",
-            value="Bengaluru",
-            key="live_weather_city"
-        )
-    with refresh_col:
-        st.write("")
-        refresh_weather = st.button(
-            "Refresh weather",
-            key="refresh_live_weather",
-            width="stretch"
-        )
-
-    if refresh_weather:
-        get_live_weather.clear()
-
-    if weather_city.strip():
-        try:
-            with st.spinner("Fetching live weather..."):
-                live_data = get_live_weather(weather_city.strip())
-
-            if live_data is None:
-                st.warning("Location not found. Check the city name and try again.")
-            else:
-                place = live_data["place"]
-                current = live_data["weather"]["current"]
-                daily = live_data["weather"]["daily"]
-
-                st.caption(
-                    f"Location: {place.get('name', weather_city)}, "
-                    f"{place.get('admin1', '')}, {place.get('country', '')} "
-                    f"| Updated: {current.get('time', 'N/A')}"
-                )
-
-                st.markdown(
-                    f"**{weather_description(current.get('weather_code'))}**"
-                )
-
-                weather_metrics = st.columns(4)
-                weather_metrics[0].metric(
-                    "Temperature",
-                    f"{current.get('temperature_2m', 'N/A')} °C"
-                )
-                weather_metrics[1].metric(
-                    "Humidity",
-                    f"{current.get('relative_humidity_2m', 'N/A')}%"
-                )
-                weather_metrics[2].metric(
-                    "Rainfall",
-                    f"{current.get('precipitation', 'N/A')} mm"
-                )
-                weather_metrics[3].metric(
-                    "Wind speed",
-                    f"{current.get('wind_speed_10m', 'N/A')} km/h"
-                )
-
-                st.markdown("#### ?? Weather-Based Environmental Risk Alert")
-
-                try:
-                    weather_humidity = float(current["relative_humidity_2m"])
-                    weather_rainfall = float(current["precipitation"])
-                    weather_temperature = float(current["temperature_2m"])
-
-                    if not np.isfinite([
-                        weather_humidity,
-                        weather_rainfall,
-                        weather_temperature
-                    ]).all():
-                        raise ValueError("Invalid weather reading")
-
-                    rain_status = "Yes" if weather_rainfall > 0 else "No"
-
-                    weather_score, weather_level, weather_reasons = risk_assessment(
-                        weather_humidity,
-                        rain_status,
-                        weather_temperature,
-                        "Unknown"
-                    )
-
-                    alert_cols = st.columns(2)
-                    alert_cols[0].metric(
-                        "Environmental risk score",
-                        f"{weather_score}/100"
-                    )
-                    alert_cols[1].metric(
-                        "Estimated risk level",
-                        weather_level
-                    )
-
-                    st.progress(weather_score / 100)
-
-                    if weather_score >= 60:
-                        st.warning(
-                            "Higher environmental risk: inspect plants regularly "
-                            "for unusual spots, discoloration, or leaf changes."
-                        )
-                    elif weather_score >= 30:
-                        st.info(
-                            "Moderate environmental risk: monitor leaves and "
-                            "avoid unnecessary moisture on foliage."
-                        )
-                    else:
-                        st.success(
-                            "Lower estimated environmental risk from the "
-                            "weather factors currently measured."
-                        )
-
-                    if weather_reasons:
-                        st.write("Contributing factors:")
-                        for reason in weather_reasons:
-                            st.write(f"- {reason}")
-
-                    st.caption(
-                        "This is a rule-based environmental estimate, not a "
-                        "disease diagnosis or validated disease forecast. "
-                        "Live weather does not measure actual leaf wetness, "
-                        "so that factor is excluded from this score."
-                    )
-
-                except (KeyError, TypeError, ValueError):
-                    st.info(
-                        "A weather-based risk alert is unavailable because "
-                        "one or more readings are missing or invalid."
-                    )
-
-                extra_metrics = st.columns(2)
-                extra_metrics[0].metric(
-                    "Feels like",
-                    f"{current.get('apparent_temperature', 'N/A')} °C"
-                )
-                extra_metrics[1].metric(
-                    "Cloud cover",
-                    f"{current.get('cloud_cover', 'N/A')}%"
-                )
-
-                st.markdown("#### 3-Day Weather Forecast")
-                forecast_rows = []
-                for i, day in enumerate(daily["time"]):
-                    forecast_rows.append({
-                        "Date": day,
-                        "Condition": weather_description(daily["weather_code"][i]),
-                        "Min temperature (°C)": daily["temperature_2m_min"][i],
-                        "Max temperature (°C)": daily["temperature_2m_max"][i],
-                        "Rain chance (%)": daily["precipitation_probability_max"][i]
-                    })
-
-                st.dataframe(
-                    forecast_rows,
-                    hide_index=True,
-                    width="stretch"
-                )
-
-                st.caption(
-                    "Weather is environmental information, not a plant-disease "
-                    "diagnosis. Actual leaf wetness and field conditions may differ."
-                )
-
-        except requests.RequestException as error:
-            st.error(
-                "Could not fetch live weather. Check your internet connection "
-                "and try Refresh weather again."
-            )
-        except (KeyError, ValueError, TypeError, IndexError):
-            st.error("The weather service returned unexpected data. Please refresh.")
-    else:
-        st.info("Enter a city name to view its weather.")
-
-
-# ---------- Detection ----------
+# ---------- Disease Detection ----------
 elif page == T["detect"]:
-    st.subheader(T["detect"])
-    st.caption("Your existing trained CNN is used. No retraining is required.")
+    st.subheader("🌿 AI Plant Disease Detection")
+    st.write("Upload a plant leaf image or capture one using your camera.")
 
-    uploaded_files = st.file_uploader(
+    plant_id = st.text_input(
+        "Plant ID (use the same ID for future scans)",
+        placeholder="Example: TOMATO-001"
+    )
+
+    uploaded_file = st.file_uploader(
         T["upload"],
         type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True
-    )
-    camera_file = st.camera_input("Or take a leaf photo")
-
-    severity = st.slider(
-        "Estimated percentage of leaf area affected (your visual estimate)",
-        min_value=0, max_value=100, value=0, step=5
+        key="disease_upload"
     )
 
-    if mode == "Expert Mode":
-        st.caption(
-            "Expert mode: review image quality, top-three model outputs "
-            "and the limits of the prediction."
-        )
+    camera_file = st.camera_input(
+        "Or capture a leaf image",
+        key="disease_camera"
+    )
 
-    files_to_process = list(uploaded_files or [])
-    if camera_file is not None:
-        files_to_process.append(camera_file)
+    image_file = uploaded_file if uploaded_file is not None else camera_file
 
-    if files_to_process and st.button(T["predict"], type="primary"):
+    if image_file is not None:
         try:
-            model, class_names = load_model()
-            for file in files_to_process:
-                image = Image.open(file)
-                original, batch = prepare_image(image)
-                quality = quality_check(original)
+            original_image = Image.open(image_file)
+            original_image, input_array = prepare_image(original_image)
 
-                with st.spinner(f"Analyzing {file.name}..."):
-                    predictions = model.predict(batch, verbose=0)[0]
+            st.image(
+                original_image,
+                caption="Selected plant leaf image",
+                width=400
+            )
 
-                if len(predictions) != len(class_names):
-                    st.error("Model output and class list do not match.")
-                    continue
+            quality = quality_check(original_image)
 
-                top_indices = np.argsort(predictions)[::-1][:3]
-                best_index = int(top_indices[0])
-                predicted_class = class_names[best_index]
-                crop, disease = decode_class(predicted_class)
-                score = float(predictions[best_index]) * 100
-                is_healthy = "healthy" in disease.lower()
+            st.markdown("### Image Quality")
+            q1, q2, q3 = st.columns(3)
+            q1.metric("Width", quality["width"])
+            q2.metric("Height", quality["height"])
+            q3.metric("Sharpness", quality["sharpness"])
 
-                if severity <= 10:
-                    severity_label = "Low user-estimated affected area"
-                elif severity <= 40:
-                    severity_label = "Moderate user-estimated affected area"
+            for note in quality["notes"]:
+                st.warning(note)
+
+            severity = st.selectbox(
+                "Your estimated symptom severity",
+                ["Not entered", "Mild", "Moderate", "Severe"]
+            )
+
+            if st.button("🔍 Analyze Plant Image", type="primary"):
+                with st.spinner("Loading CNN model and analyzing image..."):
+                    model, class_names = load_model()
+
+                    predictions = np.asarray(
+                        model.predict(input_array, verbose=0)
+                    ).reshape(-1)
+
+                    if len(predictions) != len(class_names):
+                        st.error(
+                            "Model output count does not match the class names. "
+                            "Please check your model and class_names_v2.json."
+                        )
+                    else:
+                        # Convert logits to probabilities if necessary.
+                        if (
+                            np.any(predictions < 0)
+                            or not np.isclose(predictions.sum(), 1.0, atol=0.05)
+                        ):
+                            exp_values = np.exp(
+                                predictions - np.max(predictions)
+                            )
+                            predictions = exp_values / exp_values.sum()
+
+                        best_index = int(np.argmax(predictions))
+                        class_name = class_names[best_index]
+                        crop, disease = decode_class(class_name)
+                        score = float(predictions[best_index] * 100)
+
+                        top_indices = np.argsort(predictions)[-3:][::-1]
+                        top_predictions = [
+                            {
+                                "class": class_names[int(i)],
+                                "score": float(predictions[int(i)] * 100)
+                            }
+                            for i in top_indices
+                        ]
+
+                        is_healthy = "healthy" in disease.lower()
+
+                        result = {
+                            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "plant_id": plant_id.strip() or "Not provided",
+                            "image": image_file.name,
+                            "crop": crop,
+                            "disease": disease,
+                            "score": round(score, 2),
+                            "top_predictions": top_predictions,
+                            "severity": severity,
+                            "precautions": precautions(disease)
+                        }
+
+                        save_history(result)
+                        st.session_state["latest_prediction"] = result
+
+            if "latest_prediction" in st.session_state:
+                result = st.session_state["latest_prediction"]
+
+                st.divider()
+                st.markdown("### 🧪 Prediction Result")
+
+                if "healthy" in result["disease"].lower():
+                    st.success(f"🌱 {result['crop']}: {result['disease']}")
                 else:
-                    severity_label = "High user-estimated affected area"
-
-                health_score = max(0, 100 - severity)
-                tips = precautions(disease)
-                date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                result = {
-                    "date": date_now,
-                    "image": file.name,
-                    "crop": crop,
-                    "disease": disease,
-                    "score": score,
-                    "severity": f"{severity}% - {severity_label}",
-                    "precautions": tips
-                }
-
-                save_history({
-                    "date": date_now,
-                    "image": file.name,
-                    "crop": crop,
-                    "disease": disease,
-                    "score": round(score, 2),
-                    "severity_percent_user_estimate": severity,
-                    "health_score_user_estimate": health_score
-                })
-
-                st.markdown("---")
-                st.markdown(f"### Results: {file.name}")
-                left, right = st.columns([1, 1])
-                with left:
-                    st.image(original, caption="Uploaded leaf image", width="stretch")
-                with right:
-                    st.metric("Predicted crop", crop)
-                    st.metric("Predicted condition", disease)
-                    st.metric("Model output score", f"{score:.2f}%")
-                    st.metric("User-estimated plant health score", f"{health_score}/100")
-                    st.caption(
-                        "The health score is a simple calculation from your "
-                        "entered affected-area estimate, not a CNN diagnosis."
+                    st.warning(
+                        f"Possible condition: {result['disease']}"
                     )
 
-                if is_healthy:
-                    st.success("The model's top prediction is a healthy class.")
-                else:
-                    st.warning("The model's top prediction suggests a possible disease.")
+                r1, r2, r3 = st.columns(3)
+                r1.metric("Predicted crop", result["crop"])
+                r2.metric("Predicted condition", result["disease"])
+                r3.metric("Model output score", f"{result['score']:.2f}%")
 
-                st.markdown("#### Image quality check")
-                st.write(
-                    f"Resolution: {quality['width']} × {quality['height']} | "
-                    f"Brightness: {quality['brightness']} | "
-                    f"Sharpness indicator: {quality['sharpness']}"
+                st.markdown("### Top 3 model outputs")
+                for item in result.get("top_predictions", []):
+                    top_crop, top_disease = decode_class(item["class"])
+                    st.write(
+                        f"**{top_crop} ? {top_disease}** "
+                        f"({item['score']:.2f}%)"
+                    )
+                    st.progress(
+                        min(1.0, max(0.0, item["score"] / 100))
+                    )
+
+                st.warning(
+                    "EXPERIMENTAL MODEL: These are unverified AI estimates. "
+                    "MobileNetV2 achieved 90.41% accuracy on 8,146 held-out test images. "
+                    "Do not use these results alone to decide treatment. "
+                    "Confirm with an agricultural expert."
                 )
-                if quality["notes"]:
-                    for note in quality["notes"]:
-                        st.warning(note)
-                else:
-                    st.success("No basic image-quality warning detected.")
 
-                st.markdown("#### Top 3 model outputs")
-                top_data = []
-                for idx in top_indices:
-                    c, d = decode_class(class_names[int(idx)])
-                    top_data.append({
-                        "Crop": c,
-                        "Condition": d,
-                        "Model output": f"{float(predictions[int(idx)]) * 100:.2f}%"
-                    })
-                st.dataframe(pd.DataFrame(top_data), hide_index=True, width="stretch")
+                st.caption(
+                    "The model output score is not a guaranteed probability "
+                    "or a confirmed agricultural diagnosis."
+                )
 
-                st.markdown("#### Suggested precautions")
-                for tip in tips:
+                st.markdown("### 🌿 Suggested Precautions")
+                for tip in result["precautions"]:
                     st.write("• " + tip)
 
+                pdf_buffer = create_pdf(result)
                 st.download_button(
-                    "Download PDF report",
-                    data=create_pdf(result),
-                    file_name="plantcare_report.pdf",
-                    mime="application/pdf",
-                    key=f"pdf_{file.name}_{date_now}"
+                    "📄 Download PDF Report",
+                    data=pdf_buffer,
+                    file_name="PlantCare_AI_Report.pdf",
+                    mime="application/pdf"
                 )
 
         except Exception as e:
-            st.error(f"Could not analyze the image: {e}")
+            st.error(f"Image analysis failed: {e}")
 
-# ---------- History ----------
+
+
+# ---------- Detection History ----------
 elif page == T["history"]:
-    st.subheader(T["history"])
+    st.subheader("📋 Detection History")
     history = read_history()
 
     if history.empty:
-        st.info("No scans have been saved yet. Analyze an image first.")
+        st.info("No plant scans have been saved yet.")
     else:
-        st.dataframe(history, width="stretch", hide_index=True)
+        st.metric("Total saved scans", len(history))
+
+        if "date" in history.columns:
+            history["date"] = pd.to_datetime(
+                history["date"], errors="coerce"
+            )
+
+        st.dataframe(
+            history.sort_values("date", ascending=False)
+            if "date" in history.columns else history,
+            width="stretch",
+            hide_index=True
+        )
+
         csv_data = history.to_csv(index=False).encode("utf-8")
         st.download_button(
             "Download scan history CSV",
-            data=csv_data,
-            file_name="plantcare_scan_history.csv",
-            mime="text/csv"
+            csv_data,
+            "plantcare_scan_history.csv",
+            "text/csv"
         )
-        if st.button("Clear all scan history"):
-            HISTORY_PATH.unlink(missing_ok=True)
-            st.success("History cleared. Refresh the page.")
-            st.rerun()
 
-# ---------- Analytics ----------
+
+# ---------- Plant Progress Tracker ----------
+elif page == "Plant Progress Tracker":
+    st.subheader("🌱 Plant Progress Tracker")
+    st.write("Compare previous scans of the same plant using its Plant ID.")
+
+    history = read_history()
+
+    if history.empty or "plant_id" not in history.columns:
+        st.info("No Plant ID records found. Analyze a leaf image and enter a Plant ID first.")
+    else:
+        available_ids = sorted([
+            str(x) for x in history["plant_id"].dropna().unique()
+            if str(x).strip() and str(x) != "Not provided"
+        ])
+
+        if not available_ids:
+            st.info("No named Plant IDs found. Enter a Plant ID during your next scan.")
+        else:
+            selected_id = st.selectbox("Select Plant ID", available_ids)
+
+            plant_data = history[
+                history["plant_id"].astype(str) == selected_id
+            ].copy()
+
+            if "date" in plant_data.columns:
+                plant_data["date"] = pd.to_datetime(
+                    plant_data["date"], errors="coerce"
+                )
+                plant_data = plant_data.sort_values("date")
+
+            st.markdown(f"### Progress report: {selected_id}")
+
+            p1, p2, p3 = st.columns(3)
+            p1.metric("Total scans", len(plant_data))
+            p2.metric(
+                "Latest condition",
+                str(plant_data.iloc[-1].get("disease", "Unknown"))
+            )
+            p3.metric(
+                "Latest model score",
+                f"{pd.to_numeric(pd.Series([plant_data.iloc[-1].get('score', 0)]), errors='coerce').iloc[0]:.1f}%"
+            )
+
+            if len(plant_data) >= 2 and "score" in plant_data.columns:
+                plant_data["score"] = pd.to_numeric(
+                    plant_data["score"], errors="coerce"
+                )
+                st.markdown("### Model output score across scans")
+                chart_data = plant_data.dropna(subset=["score"])
+
+                if not chart_data.empty:
+                    if "date" in chart_data.columns:
+                        st.line_chart(
+                            chart_data.set_index("date")["score"]
+                        )
+                    else:
+                        st.line_chart(chart_data["score"])
+
+                st.caption(
+                    "Changes in model scores do not necessarily indicate "
+                    "that the plant has improved or worsened."
+                )
+            else:
+                st.info("Complete at least two scans with this Plant ID to compare scan history.")
+
+            st.markdown("### Previous scans")
+            st.dataframe(
+                plant_data,
+                width="stretch",
+                hide_index=True
+            )
+
+
+# ---------- 7-Day Crop Care Planner ----------
+elif page == "7-Day Crop Care Planner":
+    st.subheader("🗓️ 7-Day Crop Care Planner")
+    st.write("Create a general plant-care schedule based on your crop and condition.")
+
+    history = read_history()
+
+    crop_options = ["Tomato", "Potato", "Pepper", "Apple", "Grape", "Corn", "Other"]
+
+    if not history.empty and "crop" in history.columns:
+        saved_crops = sorted(
+            history["crop"].dropna().astype(str).unique().tolist()
+        )
+        crop_options = list(dict.fromkeys(saved_crops + crop_options))
+
+    selected_crop = st.selectbox("Select crop", crop_options)
+    condition = st.selectbox(
+        "Current plant condition",
+        [
+            "Healthy",
+            "Possible fungal disease",
+            "Possible bacterial disease",
+            "Possible viral disease",
+            "Unknown symptoms"
+        ]
+    )
+
+    care_tasks = [
+        "Inspect leaves and note any visible changes.",
+        "Check soil moisture before watering.",
+        "Remove fallen plant debris around the plant.",
+        "Inspect both sides of leaves for unusual symptoms.",
+        "Check drainage and airflow around the plant.",
+        "Review the plant for changes since the first day.",
+        "Record a new leaf scan if symptoms have changed."
+    ]
+
+    if "fungal" in condition.lower():
+        care_tasks[2] = "Check for leaf spots or powdery growth and remove fallen debris."
+        care_tasks[4] = "Check airflow and avoid unnecessary leaf wetness."
+    elif "bacterial" in condition.lower():
+        care_tasks[2] = "Remove fallen affected plant material safely."
+        care_tasks[4] = "Avoid wetting foliage and review plant spacing."
+    elif "viral" in condition.lower():
+        care_tasks[2] = "Keep tools clean and avoid moving suspicious plant material between plants."
+        care_tasks[4] = "Inspect nearby plants for similar symptoms."
+    elif condition == "Healthy":
+        care_tasks[2] = "Keep the growing area clean."
+        care_tasks[4] = "Check that the plant has suitable growing conditions."
+
+    if st.button("Generate 7-Day Care Plan", type="primary"):
+        st.session_state["care_plan"] = {
+            "crop": selected_crop,
+            "condition": condition,
+            "tasks": care_tasks
+        }
+
+    if "care_plan" in st.session_state:
+        plan = st.session_state["care_plan"]
+
+        st.markdown(
+            f"### Care schedule for {plan['crop']}"
+        )
+        st.caption(f"Selected condition: {plan['condition']}")
+
+        for day, task in enumerate(plan["tasks"], start=1):
+            with st.container(border=True):
+                st.markdown(f"**Day {day}**")
+                st.write(task)
+
+        st.info(
+            "This is a general educational schedule, not a crop-specific "
+            "treatment prescription. Adapt it to local agricultural advice."
+        )
+
+
+# ---------- Agriculture Chat Assistant ----------
+elif page == "Agriculture Chat Assistant":
+    st.subheader("💬 Agriculture Chat Assistant")
+    st.write(
+        "Ask common plant-care questions. This assistant uses predefined "
+        "educational answers and is not a generative AI diagnosis system."
+    )
+
+    question = st.text_input(
+        "Enter your plant-care question",
+        placeholder="Example: How can I prevent fungal diseases?"
+    )
+
+    if st.button("Get Answer", type="primary"):
+        q = question.lower().strip()
+
+        if not q:
+            st.warning("Please enter a question.")
+        else:
+            answers = [
+                (["yellow", "yellowing"],
+                 "Yellow leaves can be associated with watering, drainage, "
+                 "nutrient or disease issues. Check soil moisture and inspect "
+                 "whether older or newer leaves are affected."),
+                (["fungal", "fungus", "mildew"],
+                 "Improve airflow, avoid unnecessary leaf wetness and remove "
+                 "fallen plant debris. Seek local agricultural advice if symptoms spread."),
+                (["water", "watering", "irrigation"],
+                 "Check soil moisture before watering. Water needs vary by crop, "
+                 "growth stage, soil and weather."),
+                (["healthy", "health"],
+                 "Inspect plants regularly, maintain suitable watering, "
+                 "keep the growing area clean and monitor new growth."),
+                (["pest", "insect"],
+                 "Inspect both sides of leaves and monitor for visible pests. "
+                 "Use locally approved management advice."),
+                (["tomato"],
+                 "For tomatoes, monitor leaves and stems regularly, provide "
+                 "suitable spacing and avoid unnecessary foliage wetness."),
+                (["potato"],
+                 "For potatoes, inspect leaves regularly for spots, unusual "
+                 "discoloration and changes in plant growth."),
+                (["soil", "drainage"],
+                 "Good drainage helps prevent waterlogging. Check that water "
+                 "can drain from the growing area."),
+                (["scan", "image", "photo", "detect"],
+                 "Open Disease Detection, upload a clear leaf image and select "
+                 "Analyze Plant Image to see the model's prediction.")
+            ]
+
+            response = (
+                "I could not find a matching answer. Please describe the crop "
+                "and symptoms, or consult a local agricultural expert."
+            )
+
+            for keywords, answer in answers:
+                if any(word in q for word in keywords):
+                    response = answer
+                    break
+
+            st.markdown("### Assistant response")
+            st.info(response)
+
+    st.caption(
+        "This is a rule-based FAQ helper. Its answers are general guidance, "
+        "not professional agricultural diagnosis."
+    )
+
+
+# ---------- Crop Intelligence Dashboard ----------
+elif page == "Crop Intelligence Dashboard":
+    st.subheader("📊 Crop Intelligence Dashboard")
+    st.write("Explore crop-wise disease detection statistics from saved scans.")
+
+    history = read_history()
+
+    if history.empty or "crop" not in history.columns:
+        st.info("Analyze plant images to generate crop intelligence statistics.")
+    else:
+        crop_data = history.copy()
+        crop_data["crop"] = crop_data["crop"].fillna("Unknown").astype(str)
+
+        total_scans = len(crop_data)
+        unique_crops = crop_data["crop"].nunique()
+
+        if "disease" in crop_data.columns:
+            healthy_count = int(
+                crop_data["disease"].astype(str)
+                .str.lower().str.contains("healthy").sum()
+            )
+        else:
+            healthy_count = 0
+
+        diseased_count = total_scans - healthy_count
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total crop scans", total_scans)
+        c2.metric("Different crops", unique_crops)
+        c3.metric("Possible disease predictions", diseased_count)
+
+        st.markdown("### Scans by crop")
+        crop_counts = crop_data["crop"].value_counts()
+        st.bar_chart(crop_counts)
+
+        if "disease" in crop_data.columns:
+            st.markdown("### Predicted conditions by crop")
+
+            selected_crop = st.selectbox(
+                "Choose a crop",
+                sorted(crop_data["crop"].unique())
+            )
+
+            selected_data = crop_data[
+                crop_data["crop"] == selected_crop
+            ]
+
+            disease_counts = selected_data["disease"].value_counts()
+            st.bar_chart(disease_counts)
+
+            st.markdown("### Crop statistics")
+            crop_summary = (
+                crop_data.groupby("crop")
+                .agg(
+                    Total_Scans=("disease", "count"),
+                    Different_Conditions=("disease", "nunique")
+                )
+                .reset_index()
+            )
+            st.dataframe(
+                crop_summary,
+                width="stretch",
+                hide_index=True
+            )
+
+        st.caption(
+            "Statistics describe saved model predictions only. They do not "
+            "represent actual disease prevalence in farms or regions."
+        )
+
+
 elif page == T["analytics"]:
     st.subheader(T["analytics"])
     history = read_history()
@@ -878,6 +1039,7 @@ elif page == T["analytics"]:
             if not daily.empty:
                 st.line_chart(daily)
 
+# ---------- Analytics ----------
         if "score" in history.columns:
             st.metric(
                 "Average model output score",
@@ -986,24 +1148,113 @@ elif page == T["risk"]:
             "It does not use live weather data."
         )
 
-# ---------- Map ----------
+# ---------- Crop Disease Risk Map ----------
 elif page == T["map"]:
-    st.subheader(T["map"])
+    st.subheader("🌍 Crop Disease Risk Map")
     st.write(
-        "Demonstration map: enter approximate farm or garden coordinates "
-        "to display a marker. Do not enter a private home address."
+        "Search for a farm town or city to view current weather and a "
+        "rule-based estimate of environmental conditions that may favor disease."
     )
-    lat = st.number_input("Latitude", min_value=-90.0, max_value=90.0, value=12.9716, format="%.5f")
-    lon = st.number_input("Longitude", min_value=-180.0, max_value=180.0, value=77.5946, format="%.5f")
-    label = st.text_input("Location label", value="My garden")
+    map_city = st.text_input(
+        "Enter farm city or town", value="Bengaluru", key="crop_risk_map_city"
+    )
 
-    if st.button("Show location on map"):
-        st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}))
-        st.success(f"Showing map marker for: {label}")
-    st.caption(
-        "This map displays only the coordinates you enter. It does not show "
-        "live disease outbreaks or verified regional disease risk."
-    )
+    if st.button("Check location risk", type="primary", key="check_location_risk"):
+        if not map_city.strip():
+            st.warning("Enter a city or town name first.")
+        else:
+            try:
+                with st.spinner("Finding location and retrieving weather..."):
+                    geo_response = requests.get(
+                        "https://geocoding-api.open-meteo.com/v1/search",
+                        params={"name": map_city.strip(), "count": 1, "language": "en"},
+                        timeout=15
+                    )
+                    geo_response.raise_for_status()
+                    places = geo_response.json().get("results", [])
+
+                    if not places:
+                        st.warning("Location not found. Try a nearby larger town or city.")
+                    else:
+                        place = places[0]
+                        weather_response = requests.get(
+                            "https://api.open-meteo.com/v1/forecast",
+                            params={
+                                "latitude": place["latitude"],
+                                "longitude": place["longitude"],
+                                "current": "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m",
+                                "daily": "precipitation_probability_max,temperature_2m_max,temperature_2m_min",
+                                "forecast_days": 7,
+                                "timezone": "auto"
+                            },
+                            timeout=15
+                        )
+                        weather_response.raise_for_status()
+                        weather_data = weather_response.json()
+                        current = weather_data["current"]
+                        humidity_now = float(current["relative_humidity_2m"])
+                        temperature_now = float(current["temperature_2m"])
+                        rainfall_now = float(current["precipitation"])
+
+                        risk_score, risk_level, risk_reasons = risk_assessment(
+                            humidity_now,
+                            "Yes" if rainfall_now > 0 else "No",
+                            temperature_now,
+                            "Unknown"
+                        )
+
+                        st.markdown(
+                            f"### 📍 {place.get('name', map_city)}, "
+                            f"{place.get('admin1', '')}, {place.get('country', '')}"
+                        )
+                        wx1, wx2, wx3 = st.columns(3)
+                        wx1.metric("Temperature", f"{temperature_now:.1f} °C")
+                        wx2.metric("Humidity", f"{humidity_now:.0f}%")
+                        wx3.metric("Current precipitation", f"{rainfall_now:.1f} mm")
+
+                        st.markdown("#### Estimated environmental disease-favouring conditions")
+                        st.metric("Weather risk estimate", f"{risk_score}/100")
+                        st.progress(risk_score / 100)
+                        st.write(f"**Category:** {risk_level}")
+                        if risk_score >= 60:
+                            st.warning("Monitor crops closely and inspect leaves regularly.")
+                        elif risk_score >= 30:
+                            st.info("Continue routine crop monitoring and avoid unnecessary leaf wetness.")
+                        else:
+                            st.success("Fewer of the selected weather risk factors are present now.")
+                        if risk_reasons:
+                            st.write("**Contributing factors:**")
+                            for reason in risk_reasons:
+                                st.write("- " + reason)
+
+                        st.map(pd.DataFrame({
+                            "lat": [place["latitude"]],
+                            "lon": [place["longitude"]]
+                        }))
+
+                        daily = weather_data.get("daily", {})
+                        if daily.get("time"):
+                            forecast_rows = []
+                            for i, day in enumerate(daily["time"]):
+                                forecast_rows.append({
+                                    "Date": day,
+                                    "Minimum °C": daily["temperature_2m_min"][i],
+                                    "Maximum °C": daily["temperature_2m_max"][i],
+                                    "Rain chance %": daily["precipitation_probability_max"][i]
+                                })
+                            st.markdown("#### 7-Day Local Weather Outlook")
+                            st.dataframe(forecast_rows, hide_index=True, width="stretch")
+
+                        st.caption(
+                            "The map pin marks the searched town only. The score is a simple "
+                            "weather-based educational estimate, not a disease-outbreak map, "
+                            "confirmed diagnosis, or crop-specific forecast. Leaf wetness is "
+                            "not measured by this weather service."
+                        )
+            except requests.RequestException:
+                st.error("Weather service could not be reached. Check your internet and retry.")
+            except (KeyError, TypeError, ValueError, IndexError):
+                st.error("Weather data was incomplete or could not be processed. Please retry.")
 
 # ---------- About ----------
 elif page == T["about"]:
@@ -1011,8 +1262,9 @@ elif page == T["about"]:
     st.write("""
     **PlantCare AI** is an educational plant disease detection project.
 
-    The project uses a previously trained convolutional neural network (CNN)
-    to classify leaf images into 38 supported classes.
+    The project uses a pretrained MobileNetV2 transfer-learning model
+    to classify leaf images into 38 supported classes. It achieved 90.41%
+    accuracy on the project held-out test set of 8,146 images.
 
     **Technology used**
     - Python
